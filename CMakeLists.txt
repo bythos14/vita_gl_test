@@ -30,7 +30,7 @@ add_executable(${PROJECT_NAME}.elf
 )
 
 target_link_libraries(${PROJECT_NAME}.elf
-  SceLibMonoBridge_stub
+  gcc
   SceLibKernel_stub
   SceModulemgr_stub
   SceSysmodule_stub

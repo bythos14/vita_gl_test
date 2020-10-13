@@ -1,4 +1,5 @@
 # OpenGL ES test using PSM's ScePiglet
+Based on [vitaGL sample 6](https://github.com/Rinnegatamante/vitaGL/tree/master/samples/sample6)
 
 Prerequisites:
 * DolceSDK (For now, VitaSDK currently lacks SceLibcParam, which Piglet needs for it to use the libc heap.)
