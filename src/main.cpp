@@ -9,6 +9,35 @@
 #include <EGL/egl.h>
 #define GL_GLES_PROTOTYPES 0
 #include <GLES2/gl2.h>
+#include <stdarg.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+extern "C" void _SCE_Assert(const char *, int, const char *, const char *);
+
+void __assert_func(const char * p1, int p2, const char * p3, const char * p4) 
+{
+	_SCE_Assert(p1, p2, p3, p4);
+	abort();
+}
+
+void log2json(const char *format, ...)
+{
+	va_list arg;
+	va_start(arg, format);
+	char msg[512];
+	vsprintf(msg, format, arg);
+	va_end(arg);
+	sprintf(msg, "%s\n", msg);
+	FILE *log = fopen("ux0:/data/json.log", "a+");
+	if (log != NULL)
+	{
+		fwrite(msg, 1, strlen(msg), log);
+		fclose(log);
+	}
+}
+
+#define printf log2json
 
 PFNEGLGETERRORPROC eglGetError;
 PFNEGLGETDISPLAYPROC eglGetDisplay;
@@ -46,12 +75,18 @@ PFNGLLINKPROGRAMPROC glLinkProgram;
 PFNGLGETPROGRAMIVPROC glGetProgramiv;
 PFNGLGETATTRIBLOCATIONPROC glGetAttribLocation;
 PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation;
+PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv;
 
 PFNGLUSEPROGRAMPROC glUseProgram;
 PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer;
 PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray;
 PFNGLACTIVETEXTUREPROC glActiveTexture;
 PFNGLDRAWELEMENTSPROC glDrawElements;
+
+PFNGLENABLEPROC glEnable;
+PFNGLDEPTHFUNCPROC glDepthFunc;
+
+#include <assert.h>
 
 static EGLDisplay s_display = EGL_NO_DISPLAY;
 static EGLSurface s_surface = EGL_NO_SURFACE;
@@ -60,48 +95,40 @@ static EGLContext s_context = EGL_NO_CONTEXT;
 static GLuint s_texture_id = 0;
 static GLuint s_program_id = 0;
 
-static GLint s_xyz_loc;
-static GLint s_uv_loc;
-static GLint s_sampler_loc;
+static GLint pos_loc;
+static GLint color_loc;
+static GLint wvp_loc;
 
-static const GLfloat s_obj_vertices[] = {
-	-0.5f, 0.5f, 0.0f,	/* XYZ #0 */
-	0.0f, 0.0f,			/* UV  #0 */
-	-0.5f, -0.5f, 0.0f, /* XYZ #1 */
-	0.0f, 1.0f,			/* UV  #1 */
-	0.5f, -0.5f, 0.0f,	/* XYZ #2 */
-	1.0f, 1.0f,			/* UV  #2 */
-	0.5f, 0.5f, 0.0f,	/* XYZ #3 */
-	1.0f, 0.0f			/* UV  #3 */
-};
-static const GLushort s_obj_indices[] = {
-	0,
-	1,
-	2,
-	0,
-	2,
-	3,
-};
+float colors[] = {1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0}; // Colors for a face
 
-static const GLubyte s_texture_data[4 * 3] = {
-	255, 0, 0,	 /* red */
-	0, 255, 0,	 /* green */
-	0, 0, 255,	 /* blue */
-	255, 255, 0, /* yellow */
+float vertices_front[] = {-0.5f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f}; // Front Face
+float vertices_back[] = {-0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f}; // Back Face
+float vertices_left[] = {-0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f}; // Left Face
+float vertices_right[] = {0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f}; // Right Face
+float vertices_top[] = {-0.5f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f}; // Top Face
+float vertices_bottom[] = {-0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f}; // Bottom Face
+
+uint16_t indices[] = {
+	 0, 1, 2, 1, 2, 3, // Front
+	 4, 5, 6, 5, 6, 7, // Back
+	 8, 9,10, 9,10,11, // Left
+	12,13,14,13,14,15, // Right
+	16,17,18,17,18,19, // Top
+	20,21,22,21,22,23  // Bottom
 };
 
 static const GLchar s_vertex_shader_code[] =
-	"float4 main(float4 a_xyz, float2 a_uv, out float2 v_uv : TEXCOORD0) : POSITION {\n"
-	"	v_uv = a_uv;\n"
-	"	return a_xyz;\n"
+	"float4 main(float4 aPos, float3 aColor, uniform float4x4 wvp, out float3 vColor : TEXCOORD0) : POSITION {\n"
+	"	vColor = aColor;\n"
+	"	return mul(aPos, wvp);\n"
 	"}\n";
 
 static const GLchar s_fragment_shader_code[] =
-	"float4 main(float2 v_uv : TEXCOORD0, uniform sampler2D s_texture) :COLOR {\n"
-	"	return tex2D(s_texture, v_uv);\n"
+	"float4 main(float3 vColor : TEXCOORD0) :COLOR {\n"
+	"	return float4(vColor, 1.0);\n"
 	"}\n";
 
-#define getFunc(ptr, addr) ptr = seg_1 + (addr | 1)
+#define getFunc(ptr, addr) ptr = (typeof(ptr))(seg_1 + (addr | 1))
 void init()
 {
 	sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
@@ -155,6 +182,8 @@ void init()
 	getFunc(glClearColor, 0xB15DA);
 	getFunc(glClear, 0xB152C);
 	getFunc(glGetError, 0xB2E6A);
+	getFunc(glEnable, 0xB2518);
+	getFunc(glDepthFunc, 0xB20A4);
 
 	getFunc(glPixelStorei, 0xB47A6);
 	getFunc(glGenTextures, 0xB2988);
@@ -175,70 +204,13 @@ void init()
 	getFunc(glGetProgramiv, 0xB43B6);
 	getFunc(glGetAttribLocation, 0xB2C96);
 	getFunc(glGetUniformLocation, 0xB4672);
+	getFunc(glUniformMatrix4fv, 0xB6044);
 
 	getFunc(glUseProgram, 0xB611A);
 	getFunc(glVertexAttribPointer, 0xB61DE);
 	getFunc(glEnableVertexAttribArray, 0xB25EE);
 	getFunc(glActiveTexture, 0xB0EF4);
 	getFunc(glDrawElements, 0xB23A8);
-}
-
-static bool create_texture(void)
-{
-	int ret;
-
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	ret = glGetError();
-	if (ret)
-	{
-		printf("glPixelStorei failed: 0x%08X\n", ret);
-		goto err;
-	}
-
-	glGenTextures(1, &s_texture_id);
-	ret = glGetError();
-	if (ret)
-	{
-		printf("glGenTextures failed: 0x%08X\n", ret);
-		goto err;
-	}
-
-	glBindTexture(GL_TEXTURE_2D, s_texture_id);
-	ret = glGetError();
-	if (ret)
-	{
-		printf("glBindTexture failed: 0x%08X\n", ret);
-		goto err;
-	}
-
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, s_texture_data);
-	ret = glGetError();
-	if (ret)
-	{
-		printf("glTexImage2D failed: 0x%08X\n", ret);
-		goto err;
-	}
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	ret = glGetError();
-	if (ret)
-	{
-		printf("glTexParameteri failed: 0x%08X\n", ret);
-		goto err;
-	}
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	ret = glGetError();
-	if (ret)
-	{
-		printf("glTexParameteri failed: 0x%08X\n", ret);
-		goto err;
-	}
-
-	return true;
-
-err:
-	return false;
 }
 
 static bool compile_shader(GLenum type, const char *source, size_t length, GLuint *pShader)
@@ -393,9 +365,9 @@ static bool create_program(void)
 		goto err;
 	}
 
-	s_xyz_loc = glGetAttribLocation(program_id, "a_xyz");
-	s_uv_loc = glGetAttribLocation(program_id, "a_uv");
-	s_sampler_loc = glGetUniformLocation(program_id, "s_texture");
+	pos_loc = glGetAttribLocation(program_id, "aPos");
+	color_loc = glGetAttribLocation(program_id, "aColor");
+	wvp_loc = glGetUniformLocation(program_id, "wvp");
 
 	s_program_id = program_id;
 
@@ -428,9 +400,16 @@ err:
 
 	return false;
 }
-
+extern "C" {
 int _start()
 {
+	glm::mat4 proj = glm::perspective(90.0f, 960.f/544.0f, 0.01f, 100.0f);
+
+	glm::mat4 model = glm::mat4(1.0f);
+	model = glm::translate(model, glm::vec3(0.0f, 0.0f, -2.0f));
+
+	glm::mat4 wvp;
+	
 	printf("App start\n");
 
 	init();
@@ -522,22 +501,37 @@ int _start()
 	printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
 	printf("GL_EXTENSIONS: %s\n", glGetString(GL_EXTENSIONS));
 
-	if (!create_texture())
-	{
-		printf("Unable to create texture.\n");
-		goto err;
-	}
 	if (!create_program())
 	{
 		printf("Unable to create shader program.\n");
 		goto err;
 	}
 
+	// Creating colors array
+	float color_array[12 * 6];
+	int i;
+	for (i = 0; i < 12 * 6; i++)
+	{
+		color_array[i] = colors[i % 12];
+	}
+
+	// Creating vertices array
+	float vertex_array[12 * 6];
+	memcpy(&vertex_array[12 * 0], &vertices_front[0], sizeof(float) * 12);
+	memcpy(&vertex_array[12 * 1], &vertices_back[0], sizeof(float) * 12);
+	memcpy(&vertex_array[12 * 2], &vertices_left[0], sizeof(float) * 12);
+	memcpy(&vertex_array[12 * 3], &vertices_right[0], sizeof(float) * 12);
+	memcpy(&vertex_array[12 * 4], &vertices_top[0], sizeof(float) * 12);
+	memcpy(&vertex_array[12 * 5], &vertices_bottom[0], sizeof(float) * 12);
+
 	glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
 
 	while (1)
 	{
-		glClear(GL_COLOR_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		ret = glGetError();
 		if (ret)
 		{
@@ -553,14 +547,14 @@ int _start()
 			goto err;
 		}
 
-		glVertexAttribPointer(s_xyz_loc, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), s_obj_vertices);
+		glVertexAttribPointer(pos_loc, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), vertex_array);
 		ret = glGetError();
 		if (ret)
 		{
 			printf("glVertexAttribPointer failed: 0x%08X\n", ret);
 			goto err;
 		}
-		glVertexAttribPointer(s_uv_loc, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), &s_obj_vertices[3]);
+		glVertexAttribPointer(color_loc, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), color_array);
 		ret = glGetError();
 		if (ret)
 		{
@@ -568,14 +562,14 @@ int _start()
 			goto err;
 		}
 
-		glEnableVertexAttribArray(s_xyz_loc);
+		glEnableVertexAttribArray(pos_loc);
 		ret = glGetError();
 		if (ret)
 		{
 			printf("glEnableVertexAttribArray failed: 0x%08X\n", ret);
 			goto err;
 		}
-		glEnableVertexAttribArray(s_uv_loc);
+		glEnableVertexAttribArray(color_loc);
 		ret = glGetError();
 		if (ret)
 		{
@@ -583,22 +577,13 @@ int _start()
 			goto err;
 		}
 
-		glActiveTexture(GL_TEXTURE0);
-		ret = glGetError();
-		if (ret)
-		{
-			printf("glActiveTexture failed: 0x%08X\n", ret);
-			goto err;
-		}
-		glBindTexture(GL_TEXTURE_2D, s_texture_id);
-		ret = glGetError();
-		if (ret)
-		{
-			printf("glBindTexture failed: 0x%08X\n", ret);
-			goto err;
-		}
+		model = glm::rotate(model, glm::radians(1.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		model = glm::rotate(model, glm::radians(0.75f), glm::vec3(1.0f, 0.0f, 0.0f));
+		model = glm::rotate(model, glm::radians(0.25f), glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 wvp = proj * model;
+		glUniformMatrix4fv(wvp_loc, 1, GL_FALSE, &wvp[0][0]);
 
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, s_obj_indices);
+		glDrawElements(GL_TRIANGLES, 6 * 6, GL_UNSIGNED_SHORT, indices);
 		ret = glGetError();
 		if (ret)
 		{
@@ -616,4 +601,5 @@ int _start()
 
 err:
 	return 0;
+}
 }

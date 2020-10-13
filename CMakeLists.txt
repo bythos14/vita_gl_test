@@ -26,14 +26,16 @@ include_directories(
 )
 
 add_executable(${PROJECT_NAME}.elf
-  src/main.c
+  src/main.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}.elf
+  SceLibMonoBridge_stub
   SceLibKernel_stub
   SceModulemgr_stub
   SceSysmodule_stub
   SceLibc_stub
+  SceLibm_stub
   taihen_stub
 )
 
