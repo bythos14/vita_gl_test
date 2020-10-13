@@ -3,6 +3,7 @@
 #include <psp2/sysmodule.h>
 #include <taihen.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 #define EGL_EGL_PROTOTYPES 0
 #include <EGL/egl.h>
@@ -434,7 +435,6 @@ int _start()
 
 	init();
 
-	int render_window[3] = {0, 960, 544};
 	EGLConfig config = NULL;
 	EGLint num_configs;
 
@@ -457,12 +457,6 @@ int _start()
 	EGLint ctx_attribs[] = {
 		EGL_CONTEXT_CLIENT_VERSION,
 		2,
-		EGL_NONE,
-	};
-
-	EGLint window_attribs[] = {
-		EGL_RENDER_BUFFER,
-		EGL_BACK_BUFFER,
 		EGL_NONE,
 	};
 
@@ -541,84 +535,82 @@ int _start()
 
 	glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
 
+	while (1)
 	{
-		while (1)
+		glClear(GL_COLOR_BUFFER_BIT);
+		ret = glGetError();
+		if (ret)
 		{
-			glClear(GL_COLOR_BUFFER_BIT);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glClear failed: 0x%08X\n", ret);
-				goto err;
-			}
+			printf("glClear failed: 0x%08X\n", ret);
+			goto err;
+		}
 
-			glUseProgram(s_program_id);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glUseProgram failed: 0x%08X\n", ret);
-				goto err;
-			}
+		glUseProgram(s_program_id);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glUseProgram failed: 0x%08X\n", ret);
+			goto err;
+		}
 
-			glVertexAttribPointer(s_xyz_loc, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), s_obj_vertices);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glVertexAttribPointer failed: 0x%08X\n", ret);
-				goto err;
-			}
-			glVertexAttribPointer(s_uv_loc, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), &s_obj_vertices[3]);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glVertexAttribPointer failed: 0x%08X\n", ret);
-				goto err;
-			}
+		glVertexAttribPointer(s_xyz_loc, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), s_obj_vertices);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glVertexAttribPointer failed: 0x%08X\n", ret);
+			goto err;
+		}
+		glVertexAttribPointer(s_uv_loc, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), &s_obj_vertices[3]);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glVertexAttribPointer failed: 0x%08X\n", ret);
+			goto err;
+		}
 
-			glEnableVertexAttribArray(s_xyz_loc);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glEnableVertexAttribArray failed: 0x%08X\n", ret);
-				goto err;
-			}
-			glEnableVertexAttribArray(s_uv_loc);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glEnableVertexAttribArray failed: 0x%08X\n", ret);
-				goto err;
-			}
+		glEnableVertexAttribArray(s_xyz_loc);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glEnableVertexAttribArray failed: 0x%08X\n", ret);
+			goto err;
+		}
+		glEnableVertexAttribArray(s_uv_loc);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glEnableVertexAttribArray failed: 0x%08X\n", ret);
+			goto err;
+		}
 
-			glActiveTexture(GL_TEXTURE0);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glActiveTexture failed: 0x%08X\n", ret);
-				goto err;
-			}
-			glBindTexture(GL_TEXTURE_2D, s_texture_id);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glBindTexture failed: 0x%08X\n", ret);
-				goto err;
-			}
+		glActiveTexture(GL_TEXTURE0);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glActiveTexture failed: 0x%08X\n", ret);
+			goto err;
+		}
+		glBindTexture(GL_TEXTURE_2D, s_texture_id);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glBindTexture failed: 0x%08X\n", ret);
+			goto err;
+		}
 
-			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, s_obj_indices);
-			ret = glGetError();
-			if (ret)
-			{
-				printf("glDrawElements failed: 0x%08X\n", ret);
-				goto err;
-			}
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, s_obj_indices);
+		ret = glGetError();
+		if (ret)
+		{
+			printf("glDrawElements failed: 0x%08X\n", ret);
+			goto err;
+		}
 
-			if (!eglSwapBuffers(s_display, s_surface))
-			{
-				ret = eglGetError();
-				printf("eglSwapBuffers failed: 0x%08X\n", ret);
-				goto err;
-			}
+		if (!eglSwapBuffers(s_display, s_surface))
+		{
+			ret = eglGetError();
+			printf("eglSwapBuffers failed: 0x%08X\n", ret);
+			goto err;
 		}
 	}
 
