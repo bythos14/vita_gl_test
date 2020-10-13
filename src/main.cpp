@@ -86,6 +86,10 @@ PFNGLDRAWELEMENTSPROC glDrawElements;
 PFNGLENABLEPROC glEnable;
 PFNGLDEPTHFUNCPROC glDepthFunc;
 
+PFNGLGENBUFFERSPROC glGenBuffers;
+PFNGLBINDBUFFERPROC glBindBuffer;
+PFNGLBUFFERDATAPROC glBufferData;
+
 #include <assert.h>
 
 static EGLDisplay s_display = EGL_NO_DISPLAY;
@@ -211,6 +215,10 @@ void init()
 	getFunc(glEnableVertexAttribArray, 0xB25EE);
 	getFunc(glActiveTexture, 0xB0EF4);
 	getFunc(glDrawElements, 0xB23A8);
+
+	getFunc(glGenBuffers, 0xB2852);
+	getFunc(glBindBuffer, 0xB0F9E);
+	getFunc(glBufferData, 0xB1394);
 }
 
 static bool compile_shader(GLenum type, const char *source, size_t length, GLuint *pShader)
@@ -529,6 +537,36 @@ int _start()
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
+	GLuint buffers[3];
+	glGenBuffers(3, buffers);
+	
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
+	glBufferData(GL_ARRAY_BUFFER, 12 * 6 * sizeof(float), vertex_array, GL_STATIC_DRAW);
+	if(glGetError() != 0)
+	{
+		printf("Error setting up buffers");
+		goto err;
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
+	glBufferData(GL_ARRAY_BUFFER, 12 * 6 * sizeof(float), color_array, GL_STATIC_DRAW);
+	if (glGetError() != 0)
+	{
+		printf("Error setting up buffers");
+		goto err;
+	}
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 36 * sizeof(uint16_t), indices, GL_STATIC_DRAW);
+	if (glGetError() != 0)
+	{
+		printf("Error setting up buffers");
+		goto err;
+	}
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
 	while (1)
 	{
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -547,14 +585,16 @@ int _start()
 			goto err;
 		}
 
-		glVertexAttribPointer(pos_loc, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), vertex_array);
+		glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
+		glVertexAttribPointer(pos_loc, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0);
 		ret = glGetError();
 		if (ret)
 		{
 			printf("glVertexAttribPointer failed: 0x%08X\n", ret);
 			goto err;
 		}
-		glVertexAttribPointer(color_loc, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), color_array);
+		glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
+		glVertexAttribPointer(color_loc, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0);
 		ret = glGetError();
 		if (ret)
 		{
@@ -583,7 +623,8 @@ int _start()
 		glm::mat4 wvp = proj * model;
 		glUniformMatrix4fv(wvp_loc, 1, GL_FALSE, &wvp[0][0]);
 
-		glDrawElements(GL_TRIANGLES, 6 * 6, GL_UNSIGNED_SHORT, indices);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]);
+		glDrawElements(GL_TRIANGLES, 6 * 6, GL_UNSIGNED_SHORT, 0);
 		ret = glGetError();
 		if (ret)
 		{
