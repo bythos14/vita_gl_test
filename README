@@ -1,5 +1,7 @@
-OpenGL ES test
+# OpenGL ES test using PSM's ScePiglet
 
 Prerequisites:
-	SDK (oouch! need to move to open source SDK in the future...)
-	Linux & Wine (it could be backported to Windows and to other existing custom SDKs)
+	DolceSDK (For now, VitaSDK currently lacks SceLibcParam, which Piglet needs for it to use the libc heap.)
+	
+	Self extracted libpsm.suprx, libmono_bridge.suprx and libshacccg.suprx (See [FAGDec](https://github.com/CelesteBlue-dev/PSVita-RE-tools/tree/master/FAGDec/build))
+	These files go into ux0:app/PGLVITA00 after building and installing the vpk.
