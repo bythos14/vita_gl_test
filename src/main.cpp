@@ -10,6 +10,7 @@
 #define GL_GLES_PROTOTYPES 0
 #include <GLES2/gl2.h>
 #include <stdarg.h>
+#include <assert.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -20,24 +21,6 @@ void __assert_func(const char * p1, int p2, const char * p3, const char * p4)
 	_SCE_Assert(p1, p2, p3, p4);
 	abort();
 }
-
-void log2json(const char *format, ...)
-{
-	va_list arg;
-	va_start(arg, format);
-	char msg[512];
-	vsprintf(msg, format, arg);
-	va_end(arg);
-	sprintf(msg, "%s\n", msg);
-	FILE *log = fopen("ux0:/data/json.log", "a+");
-	if (log != NULL)
-	{
-		fwrite(msg, 1, strlen(msg), log);
-		fclose(log);
-	}
-}
-
-#define printf log2json
 
 PFNEGLGETERRORPROC eglGetError;
 PFNEGLGETDISPLAYPROC eglGetDisplay;
@@ -90,8 +73,6 @@ PFNGLGENBUFFERSPROC glGenBuffers;
 PFNGLBINDBUFFERPROC glBindBuffer;
 PFNGLBUFFERDATAPROC glBufferData;
 
-#include <assert.h>
-
 static EGLDisplay s_display = EGL_NO_DISPLAY;
 static EGLSurface s_surface = EGL_NO_SURFACE;
 static EGLContext s_context = EGL_NO_CONTEXT;
@@ -132,7 +113,7 @@ static const GLchar s_fragment_shader_code[] =
 	"	return float4(vColor, 1.0);\n"
 	"}\n";
 
-#define getFunc(ptr, addr) ptr = (typeof(ptr))(seg_1 + (addr | 1))
+#define getFunc(ptr, addr) ptr = (typeof(ptr))(seg_0 + (addr | 1))
 void init()
 {
 	sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
@@ -155,7 +136,6 @@ void init()
 		printf("Failed to load libmono_bridge.suprx\n");
 		exit(0);
 	}
-
 	modid = sceKernelLoadStartModule("app0:libpsm.suprx", 0, 0, 0, &opt, &status);
 	if (modid < 0)
 	{
@@ -167,8 +147,25 @@ void init()
 	info.size = sizeof(info);
 	sceKernelGetModuleInfo(modid, &info);
 
-	uint8_t* seg_1 = (uint8_t*)info.segments[0].vaddr;
-	printf("LibPsm Base = 0x%08X\n", seg_1);
+	uint8_t* seg_0 = (uint8_t*)info.segments[0].vaddr;
+	printf("LibPsm Base = 0x%08X\n", seg_0);
+
+	SceUID shaccModid = sceKernelLoadStartModule("ur0:data/libshacccg.suprx", 0, 0, 0, &opt, &status);
+	if (shaccModid < 0)
+	{
+		printf("Failed to load libshacccg.suprx\n");
+		exit(0);
+	}
+	int success = 1;
+	taiInjectData(modid, 1, 0xEF4, &shaccModid, sizeof(SceUID));
+	taiInjectData(modid, 1, 0xEEC, &success, sizeof(int));
+	taiInjectData(modid, 1, 0xEF0, &success, sizeof(int));
+
+	memset(&info, 0, sizeof(info));
+	sceKernelGetModuleInfo(shaccModid, &info);
+	uint8_t* shacc_seg0 = (uint8_t*)info.segments[0].vaddr;
+	int (*sceShaccCgSetDefaultAllocator)(void*, void*) = (int (*)(void*, void*))(shacc_seg0 + (0x204A2C | 1));
+	sceShaccCgSetDefaultAllocator(seg_0 + 0x22133, seg_0 + 0x2213F);
 
 	getFunc(eglGetDisplay, 0xB418);
 	getFunc(eglInitialize, 0xB456);
