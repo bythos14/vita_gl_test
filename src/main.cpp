@@ -113,7 +113,7 @@ static const GLchar s_fragment_shader_code[] =
 	"	return float4(vColor, 1.0);\n"
 	"}\n";
 
-#define getFunc(ptr, addr) ptr = (typeof(ptr))(seg_0 + (addr | 1))
+#define getFunc(ptr, addr) ptr = (typeof(ptr))(segment0 + (addr | 1))
 void init()
 {
 	sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
@@ -130,6 +130,7 @@ void init()
 	SceKernelLMOption opt;
 	opt.size = sizeof(opt);
 	SceUID modid;
+
 	modid = sceKernelLoadStartModule("app0:libmono_bridge.suprx", 0, 0, 0, &opt, &status);
 	if (modid < 0)
 	{
@@ -146,26 +147,8 @@ void init()
 	SceKernelModuleInfo info;
 	info.size = sizeof(info);
 	sceKernelGetModuleInfo(modid, &info);
-
-	uint8_t* seg_0 = (uint8_t*)info.segments[0].vaddr;
-	printf("LibPsm Base = 0x%08X\n", seg_0);
-
-	SceUID shaccModid = sceKernelLoadStartModule("ur0:data/libshacccg.suprx", 0, 0, 0, &opt, &status);
-	if (shaccModid < 0)
-	{
-		printf("Failed to load libshacccg.suprx\n");
-		exit(0);
-	}
-	int success = 1;
-	taiInjectData(modid, 1, 0xEF4, &shaccModid, sizeof(SceUID));
-	taiInjectData(modid, 1, 0xEEC, &success, sizeof(int));
-	taiInjectData(modid, 1, 0xEF0, &success, sizeof(int));
-
-	memset(&info, 0, sizeof(info));
-	sceKernelGetModuleInfo(shaccModid, &info);
-	uint8_t* shacc_seg0 = (uint8_t*)info.segments[0].vaddr;
-	int (*sceShaccCgSetDefaultAllocator)(void*, void*) = (int (*)(void*, void*))(shacc_seg0 + (0x204A2C | 1));
-	sceShaccCgSetDefaultAllocator(seg_0 + 0x22133, seg_0 + 0x2213F);
+	uint8_t* segment0 = (uint8_t*)info.segments[0].vaddr;
+	uint8_t* segment1 = (uint8_t*)info.segments[1].vaddr;
 
 	getFunc(eglGetDisplay, 0xB418);
 	getFunc(eglInitialize, 0xB456);
@@ -216,6 +199,26 @@ void init()
 	getFunc(glGenBuffers, 0xB2852);
 	getFunc(glBindBuffer, 0xB0F9E);
 	getFunc(glBufferData, 0xB1394);
+
+	// Load, and patch libpsm for libshacccg.suprx
+	modid = sceKernelLoadStartModule("ur0:data/libshacccg.suprx", 0, 0, 0, &opt, &status);
+	if (modid < 0)
+	{
+		printf("Failed to load libshacccg.suprx\n");
+		exit(0);
+	}
+
+	memset(&info, 0, sizeof(info));
+	sceKernelGetModuleInfo(modid, &info);
+	uint8_t *shacc_seg0 = (uint8_t *)info.segments[0].vaddr;
+	int (*sceShaccCgSetDefaultAllocator)(void *, void *) = (int (*)(void *, void *))(shacc_seg0 + (0x204A2C | 1));
+	int ret = sceShaccCgSetDefaultAllocator(segment0 + 0x22133, segment0 + 0x2213F);
+	if (ret == 0)
+	{
+		*(uint32_t *)(segment1 + 0xEF4) = modid; // ShaccCg Moddule ID
+		*(uint32_t *)(segment1 + 0xEF0) = 1;	 // Successfully load ShaccCg
+		*(uint32_t *)(segment1 + 0xEEC) = 1;	 // Successfully set allocators
+	}
 }
 
 static bool compile_shader(GLenum type, const char *source, size_t length, GLuint *pShader)
@@ -458,7 +461,7 @@ int _start()
 		ret = eglGetError();
 		printf("eglInitialize failed: 0x%08X\n", ret);
 	}
-	printf("EGL version major:%d, minor:%d\n", major, minor);
+	printf("EGL Version: %d.%d\n", major, minor);
 
 	if (!eglBindAPI(EGL_OPENGL_ES_API))
 	{

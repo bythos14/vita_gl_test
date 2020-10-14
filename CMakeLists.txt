@@ -16,7 +16,7 @@ set(VITA_APP_NAME "Piglet Sample")
 set(VITA_TITLEID  "PGLVITA00")
 set(VITA_VERSION  "01.00")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -Wall")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -ffast-math -mtune=cortex-a9 -mfpu=neon -ftree-vectorize -Wall")
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostdlib")
 
 set (DOLCE_ELF_CREATE_FLAGS "${DOLCE_ELF_CREATE_FLAGS} -h 0x1000000")
@@ -36,7 +36,6 @@ target_link_libraries(${PROJECT_NAME}.elf
   SceSysmodule_stub
   SceLibc_stub
   SceLibm_stub
-  taihen_stub
 )
 
 dolce_create_self(eboot.bin ${PROJECT_NAME}.elf)
