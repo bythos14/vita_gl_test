@@ -101,7 +101,7 @@ static const GLchar s_fragment_shader_code[] =
 	"	return tex2D(s_texture, v_uv);\n"
 	"}\n";
 
-#define getFunc(ptr, addr) ptr = seg_1 + (addr | 1)
+#define getFunc(ptr, addr) ptr = (typeof(ptr))(segment0 + (addr | 1))
 void init()
 {
 	sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
@@ -118,13 +118,13 @@ void init()
 	SceKernelLMOption opt;
 	opt.size = sizeof(opt);
 	SceUID modid;
+
 	modid = sceKernelLoadStartModule("app0:libmono_bridge.suprx", 0, 0, 0, &opt, &status);
 	if (modid < 0)
 	{
 		printf("Failed to load libmono_bridge.suprx\n");
 		exit(0);
 	}
-
 	modid = sceKernelLoadStartModule("app0:libpsm.suprx", 0, 0, 0, &opt, &status);
 	if (modid < 0)
 	{
@@ -135,9 +135,8 @@ void init()
 	SceKernelModuleInfo info;
 	info.size = sizeof(info);
 	sceKernelGetModuleInfo(modid, &info);
-
-	uint8_t* seg_1 = (uint8_t*)info.segments[0].vaddr;
-	printf("LibPsm Base = 0x%08X\n", seg_1);
+	uint8_t* segment0 = (uint8_t*)info.segments[0].vaddr;
+	uint8_t* segment1 = (uint8_t*)info.segments[1].vaddr;
 
 	getFunc(eglGetDisplay, 0xB418);
 	getFunc(eglInitialize, 0xB456);
@@ -181,6 +180,26 @@ void init()
 	getFunc(glEnableVertexAttribArray, 0xB25EE);
 	getFunc(glActiveTexture, 0xB0EF4);
 	getFunc(glDrawElements, 0xB23A8);
+	
+	// Load, and patch libpsm for libshacccg.suprx
+	modid = sceKernelLoadStartModule("ur0:data/libshacccg.suprx", 0, 0, 0, &opt, &status);
+	if (modid < 0)
+	{
+		printf("Failed to load libshacccg.suprx\n");
+		exit(0);
+	}
+
+	memset(&info, 0, sizeof(info));
+	sceKernelGetModuleInfo(modid, &info);
+	uint8_t *shacc_seg0 = (uint8_t *)info.segments[0].vaddr;
+	int (*sceShaccCgSetDefaultAllocator)(void *, void *) = (int (*)(void *, void *))(shacc_seg0 + (0x204A2C | 1));
+	int ret = sceShaccCgSetDefaultAllocator(segment0 + 0x22133, segment0 + 0x2213F);
+	if (ret == 0)
+	{
+		*(uint32_t *)(segment1 + 0xEF4) = modid; // ShaccCg Moddule ID
+		*(uint32_t *)(segment1 + 0xEF0) = 1;	 // Successfully load ShaccCg
+		*(uint32_t *)(segment1 + 0xEEC) = 1;	 // Successfully set allocators
+	}
 }
 
 static bool create_texture(void)
